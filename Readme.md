@@ -1,7 +1,3 @@
----
-title: camelFaster 
----
-
 # 🐫 camelFaster
 
 **camelFaster** is a simple Bash script that allows you to limit the network bandwidth for specific processes by using their PID (Process ID). This is useful for throttling the network usage of individual programs, such as browsers or background services.
