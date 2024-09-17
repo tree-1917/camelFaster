@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# camelFaster: Limit bandwidth for a specific process by PID
+
+# Check if the user is running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root to control network bandwidth."
+  exit 1
+fi
+
+# Function to check and install required packages
+install_requirements() {
+  if ! command -v tc &> /dev/null || ! command -v iptables &> /dev/null; then
+    echo "Required tools (tc and iptables) are not installed. Installing them now..."
+    apt update
+    apt install -y iproute2 iptables
+  fi
+}
+
+# Function to display usage
+usage() {
+  echo "Usage: $0 [limit] [PID] [interface]"
+  echo "Example: $0 80kbps 3003 wlan0"
+  exit 1
+}
+
+# Check if arguments are provided
+if [ "$#" -ne 3 ]; then
+  usage
+fi
+
+# Assign variables
+LIMIT=$1
+PID=$2
+INTERFACE=$3
+
+# Check and install required tools
+install_requirements
+
+# Apply bandwidth limit using `tc` and `iptables`
+apply_limit() {
+  echo "Applying bandwidth limit of $LIMIT on process ID $PID (e.g., Chrome) using interface $INTERFACE..."
+
+  # Mark packets from the process using iptables
+  iptables -A OUTPUT -m owner --pid-owner "$PID" -j MARK --set-mark 1
+
+  # Apply the bandwidth limit to the marked packets using tc
+  tc qdisc add dev "$INTERFACE" root handle 1: htb default 30
+  tc class add dev "$INTERFACE" parent 1: classid 1:1 htb rate "$LIMIT"
+  tc filter add dev "$INTERFACE" protocol ip parent 1:0 prio 1 handle 1 fw flowid 1:1
+}
+
+# Remove bandwidth limit and iptables rule
+remove_limit() {
+  echo "Removing bandwidth limit on process ID $PID..."
+  
+  # Remove the iptables rule
+  iptables -D OUTPUT -m owner --pid-owner "$PID" -j MARK --set-mark 1
+  
+  # Remove the tc rules
+  tc qdisc del dev "$INTERFACE" root
+}
+
+# Run the task with limited bandwidth
+run_task_with_limit() {
+  apply_limit
+  echo "Bandwidth limit applied. Monitor the process as needed."
+  sleep infinity  # Keep script running to maintain the limit
+  remove_limit
+}
+
+# Trap to remove limit in case of script interruption
+trap remove_limit EXIT
+
+# Execute the bandwidth limit setup
+run_task_with_limit
